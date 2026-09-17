@@ -1,9 +1,8 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Noktos Agent Next — Rules for Every Agent
 
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+1. **The token never leaks:** Memory-only session (`auth.ts`). No `localStorage`, no `sessionStorage`, no cookies for access tokens.
+2. **The frontend is not the authorization boundary:** Backend is the single authority. UI must behave properly even if forged requests occur.
+3. **Render only declared-safe data:** Approval cards use allowlisted `inputPreview` only. Never render chain-of-thought, internal UUIDs as primary UX, or raw payloads.
+4. **Contracts are vendored and read-only:** `src/contracts/` and `contracts.lock` are authoritative copies of `noktos-agent-backend/contracts/`.
+5. **Event stream discipline:** Use `fetch` + `ReadableStream` with `Authorization: Bearer <token>`. Do not use `EventSource`. Track `seq` and send `Last-Event-ID` on reconnect.
+6. **Approvals:** Every decision generates an `idempotencyKey` (UUID). Buttons disable while in-flight.
