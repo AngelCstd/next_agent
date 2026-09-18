@@ -10,6 +10,12 @@ import type {
 } from '../contracts';
 import { HttpTransport } from '../infrastructure/api/HttpTransport';
 import { projectTaskAssistantContent } from '../view-models/chatProjection';
+import {
+  createStartGuard,
+  createStateRefreshScheduler,
+  getStateRefreshKind,
+  type StateRefreshScheduler,
+} from './stateRefresh';
 
 export interface ChatMessage {
   id: string;
@@ -36,6 +42,9 @@ export function useChatSession() {
   const transportRef = useRef<HttpTransport | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
+  const refreshSchedulerRef = useRef<StateRefreshScheduler<string> | null>(null);
+  const cleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [startGuard] = useState(createStartGuard);
 
   const getTransport = useCallback(() => {
     if (!transportRef.current) {
@@ -45,15 +54,11 @@ export function useChatSession() {
     return transportRef.current;
   }, []);
 
-  const refreshState = useCallback(async (convId: string) => {
+  const refreshTasks = useCallback(async (convId: string) => {
     try {
       const transport = getTransport();
-      const [fetchedTasks, fetchedApprovals] = await Promise.all([
-        transport.listTasks(convId),
-        transport.listApprovals(convId),
-      ]);
+      const fetchedTasks = await transport.listTasks(convId);
       setTasks(fetchedTasks);
-      setApprovals(fetchedApprovals);
 
       setMessages((prev) => {
         const updated = [...prev];
@@ -84,25 +89,58 @@ export function useChatSession() {
     }
   }, [getTransport]);
 
+  const refreshApprovals = useCallback(async (convId: string) => {
+    try {
+      const fetchedApprovals = await getTransport().listApprovals(convId);
+      setApprovals(fetchedApprovals);
+    } catch {
+      // Ignored non-fatal transient refresh error
+    }
+  }, [getTransport]);
+
+  const refreshState = useCallback(async (convId: string) => {
+    await Promise.all([refreshTasks(convId), refreshApprovals(convId)]);
+  }, [refreshApprovals, refreshTasks]);
+
+  useEffect(() => {
+    const scheduler = createStateRefreshScheduler({
+      delayMs: 125,
+      refreshTasks,
+      refreshApprovals,
+    });
+    refreshSchedulerRef.current = scheduler;
+
+    return () => {
+      scheduler.cancel();
+      if (refreshSchedulerRef.current === scheduler) refreshSchedulerRef.current = null;
+    };
+  }, [refreshApprovals, refreshTasks]);
+
   const initConversation = useCallback(async () => {
+    if (cleanupTimerRef.current) {
+      clearTimeout(cleanupTimerRef.current);
+      cleanupTimerRef.current = null;
+    }
     const token = getAccessToken();
     if (!token) {
       setError('Autenticación requerida.');
       return;
     }
 
+    if (!startGuard.tryStart()) return;
+
     setIsInitializing(true);
     setError(null);
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     try {
       const transport = getTransport();
       const conv = await transport.createConversation();
+      if (abortController.signal.aborted) return;
       setConversation(conv);
       activeConversationIdRef.current = conv.id;
 
       // Start SSE Stream
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
-
       setSseStatus('connecting');
       void (async () => {
         try {
@@ -117,14 +155,8 @@ export function useChatSession() {
           for await (const event of stream) {
             setEvents((prev) => [event, ...prev].slice(0, 50));
 
-            // Invalidate tasks / approvals on operational events
-            if (
-              event.type.startsWith('task.') ||
-              event.type.startsWith('approval.') ||
-              event.type.startsWith('supervisor.')
-            ) {
-              void refreshState(conv.id);
-            }
+            const refreshKind = getStateRefreshKind(event.type);
+            if (refreshKind) refreshSchedulerRef.current?.schedule(refreshKind, conv.id);
           }
         } catch {
           if (!abortController.signal.aborted) {
@@ -135,11 +167,15 @@ export function useChatSession() {
 
       await refreshState(conv.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al inicializar la conversación');
+      if (!abortController.signal.aborted) {
+        startGuard.reset();
+        abortControllerRef.current = null;
+        setError(err instanceof Error ? err.message : 'Error al inicializar la conversación');
+      }
     } finally {
       setIsInitializing(false);
     }
-  }, [getTransport, refreshState]);
+  }, [getTransport, refreshState, startGuard]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !conversation) return;
@@ -165,14 +201,12 @@ export function useChatSession() {
         content: content.trim(),
         clientMessageId,
       });
-      // Trigger a refresh of tasks
-      await refreshState(conversation.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al enviar mensaje');
     } finally {
       setIsSending(false);
     }
-  }, [conversation, getTransport, refreshState]);
+  }, [conversation, getTransport]);
 
   const decideApproval = useCallback(async (approvalId: string, decision: 'approve' | 'reject') => {
     if (!conversation) return;
@@ -190,19 +224,25 @@ export function useChatSession() {
         idempotencyKey,
       });
 
-      await refreshState(conversation.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar la decisión');
     } finally {
       setSubmittingApprovalId(null);
     }
-  }, [conversation, getTransport, refreshState]);
+  }, [conversation, getTransport]);
 
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort();
+      cleanupTimerRef.current = setTimeout(() => {
+        refreshSchedulerRef.current?.cancel();
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        activeConversationIdRef.current = null;
+        startGuard.reset();
+        cleanupTimerRef.current = null;
+      }, 0);
     };
-  }, []);
+  }, [startGuard]);
 
   return {
     conversation,

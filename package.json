@@ -7,7 +7,7 @@
     "verify:contracts": "node scripts/verify-contracts.mjs",
     "build": "npm run verify:contracts && next build",
     "start": "next start -p 3001",
-    "test": "tsx scripts/test-http-transport-fetch-binding.mjs && tsx scripts/test-agent-activity.mjs",
+    "test": "tsx scripts/test-http-transport-fetch-binding.mjs && tsx scripts/test-agent-activity.mjs && tsx scripts/test-conversation-request-volume-and-activity.mjs",
     "lint": "eslint"
   },
   "dependencies": {

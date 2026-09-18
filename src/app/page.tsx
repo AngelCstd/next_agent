@@ -4,7 +4,12 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { clearAccessToken, getAccessToken, signIn } from '../auth/auth';
 import type { AgentTask, ApprovalRequest } from '../contracts';
 import { useChatSession } from '../hooks/useChatSession';
-import { deriveAgentActivity, type AgentActivityStep } from '../view-models/agentActivity';
+import {
+  deriveAgentActivity,
+  scopeTasksToLatestTurn,
+  scopeTasksToTurn,
+  type AgentActivityStep,
+} from '../view-models/agentActivity';
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_)/g);
@@ -234,7 +239,8 @@ export default function Home() {
     decideApproval,
   } = useChatSession();
 
-  const activitySteps = deriveAgentActivity(tasks, events);
+  const latestTurnActivitySteps = deriveAgentActivity(scopeTasksToLatestTurn(tasks), events);
+  const sidebarActivitySteps = deriveAgentActivity(tasks, events);
 
   useEffect(() => {
     if (getAccessToken()) {
@@ -247,7 +253,7 @@ export default function Home() {
     if (feed) {
       feed.scrollTop = feed.scrollHeight;
     }
-  }, [messages.length, approvals.length, activitySteps.length]);
+  }, [messages.length, approvals.length, latestTurnActivitySteps.length]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -300,8 +306,6 @@ export default function Home() {
 
   const isLatestMessageAssistant =
     messages.length > 0 && messages[messages.length - 1].role === 'assistant';
-  const lastAssistantIndex = messages.findLastIndex((message) => message.role === 'assistant');
-
   const unattachedApprovals = approvals.filter(
     (approval) => !messages.some((message) => message.taskId === approval.taskId),
   );
@@ -425,13 +429,18 @@ export default function Home() {
 
             {messages.map((msg, idx) => {
               const approval = getApprovalForTask(msg.taskId);
-              const isTargetAssistantForActivity =
-                isLatestMessageAssistant && idx === lastAssistantIndex;
+              const turnActivitySteps = msg.role === 'assistant'
+                ? deriveAgentActivity(scopeTasksToTurn(tasks, msg.taskId), events)
+                : [];
+              const isLatestMessage = idx === messages.length - 1;
 
               return (
                 <div key={msg.id} className="message-group">
-                  {isTargetAssistantForActivity && activitySteps.length > 0 && (
-                    <ActivityCard steps={activitySteps} isSending={isSending} />
+                  {turnActivitySteps.length > 0 && (
+                    <ActivityCard
+                      steps={turnActivitySteps}
+                      isSending={isSending && isLatestMessage}
+                    />
                   )}
 
                   {approval && (
@@ -454,8 +463,8 @@ export default function Home() {
 
             {chatError && <div className="error-box">{chatError}</div>}
 
-            {!isLatestMessageAssistant && activitySteps.length > 0 && (
-              <ActivityCard steps={activitySteps} isSending={isSending} />
+            {!isLatestMessageAssistant && latestTurnActivitySteps.length > 0 && (
+              <ActivityCard steps={latestTurnActivitySteps} isSending={isSending} />
             )}
 
             {unattachedApprovals.map((approval) => (
@@ -531,13 +540,13 @@ export default function Home() {
 
               <section className="sidebar-section">
                 <h2 className="section-heading">Progreso de Ejecución</h2>
-                {activitySteps.length === 0 ? (
+                {sidebarActivitySteps.length === 0 ? (
                   <div className="empty-state">
                     Envía una búsqueda para ver la coordinación de agentes en tiempo real.
                   </div>
                 ) : (
                   <div className="boxed-list progress-list">
-                    <ActivitySteps steps={activitySteps} />
+                    <ActivitySteps steps={sidebarActivitySteps} />
                   </div>
                 )}
               </section>
