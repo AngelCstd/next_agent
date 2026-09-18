@@ -10,6 +10,7 @@ import {
 } from '../src/hooks/stateRefresh.ts';
 import { deriveInlineActivityPresentation } from '../src/view-models/inlineActivity.ts';
 import { mergeTaskAssistantMessages } from '../src/view-models/chatMessages.ts';
+import { projectTaskAssistantContent } from '../src/view-models/chatProjection.ts';
 import {
   isNearScrollBottom,
   shouldAutoScroll,
@@ -132,6 +133,60 @@ const third = supervisorTask('supervisor-third', 'failed', '2026-09-18T10:02:00.
   assert.equal(isNearScrollBottom({ scrollTop: 700, scrollHeight: 1000, clientHeight: 100 }), false);
   assert.equal(shouldAutoScroll(false), false);
   assert.equal(shouldAutoScroll(true), true);
+}
+
+// Every backend completion shape projects its natural text instead of its audit summary.
+{
+  const resultFixtures = [
+    {
+      kind: 'delegated',
+      data: {
+        text: 'Estoy buscando opciones de hoteles...',
+        childTaskId: '123e4567-e89b-12d3-a456-426614174000',
+      },
+      summary: 'Fictional mock hotel search queued with HotelSearchAgent.',
+    },
+    {
+      kind: 'answer',
+      data: {
+        text: 'Listo, agregué la reservación al carrito.',
+        mock: true,
+        cartItemId: '123e4567-e89b-12d3-a456-426614174000',
+        status: 'added',
+      },
+      summary: 'Fictional mock reservation added to the cart after owner approval.',
+    },
+    {
+      kind: 'answer',
+      data: {
+        text: 'Listo, confirmé la reserva.',
+        mock: true,
+        bookingId: '123e4567-e89b-12d3-a456-426614174000',
+        status: 'confirmed',
+      },
+      summary: 'Fictional mock booking confirmed after owner approval.',
+    },
+    {
+      kind: 'answer',
+      data: {
+        text: 'Listo, cancelé la reserva.',
+        mock: true,
+        bookingId: '123e4567-e89b-12d3-a456-426614174000',
+        status: 'cancelled',
+      },
+      summary: 'Fictional mock booking cancelled after owner approval.',
+    },
+  ];
+
+  for (const [index, result] of resultFixtures.entries()) {
+    const projected = projectTaskAssistantContent({
+      ...supervisorTask(`natural-result-${index}`, 'completed', '2026-09-18T10:07:00.000Z'),
+      result,
+    });
+    assert.equal(projected, result.data.text);
+    assert.notEqual(projected, result.summary);
+    assert.doesNotMatch(projected, /authContextId|[0-9a-f]{8}-[0-9a-f-]{27,}|[{].*[}]/i);
+  }
 }
 
 // 3. A delegated HotelSearchAgent task projects with its Supervisor parent.

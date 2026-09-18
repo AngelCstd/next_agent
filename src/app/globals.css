@@ -21,6 +21,7 @@
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 html { background: var(--paper); }
 body {
   margin: 0;
@@ -34,9 +35,11 @@ button:disabled { cursor: not-allowed; }
 ::selection { background: var(--line); color: var(--surface); }
 
 .terminal-shell {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--paper);
   color: var(--ink);
 }
@@ -50,6 +53,7 @@ button:disabled { cursor: not-allowed; }
   gap: 1rem;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  flex-shrink: 0;
 }
 
 .brand-lockup, .header-actions, .stream-status { display: flex; align-items: center; }
@@ -99,7 +103,7 @@ button:disabled { cursor: not-allowed; }
 
 .terminal-panel { min-width: 0; border: 1px solid var(--line); background: var(--surface); }
 .chat-panel {
-  min-height: min(48rem, calc(100vh - 6.75rem));
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -134,7 +138,7 @@ button:disabled { cursor: not-allowed; }
 }
 .terminal-button:disabled { border-color: var(--disabled); color: #8a9290; }
 .messages-feed {
-  min-height: 18rem;
+  min-height: 0;
   padding: clamp(1rem, 3vw, 2rem);
   display: flex;
   flex: 1;
@@ -228,6 +232,7 @@ button:disabled { cursor: not-allowed; }
   gap: 0.6rem;
   border-top: 1px solid var(--line);
   background: var(--surface);
+  flex-shrink: 0;
 }
 .terminal-input {
   width: 100%;
@@ -242,7 +247,7 @@ button:disabled { cursor: not-allowed; }
 .terminal-input::placeholder { color: #7b8582; }
 .terminal-input:focus { border-color: var(--line); outline: 2px solid var(--accent-soft); outline-offset: 0; }
 
-.sidebar { min-width: 0; display: flex; flex-direction: column; }
+.sidebar { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
 .tab {
   min-height: 2.35rem;
@@ -260,7 +265,7 @@ button:disabled { cursor: not-allowed; }
 .tab:hover, .tab:focus-visible, .tab.active { background: var(--accent-soft); color: var(--line); outline: none; }
 .tab.active { border-bottom-color: var(--line); font-weight: 700; }
 .sidebar-content {
-  min-height: 20rem;
+  min-height: 0;
   padding: 1rem;
   display: flex;
   flex: 1;
@@ -402,6 +407,12 @@ button:disabled { cursor: not-allowed; }
 @keyframes terminal-blink { 50% { opacity: 0.35; } }
 
 @media (max-width: 900px) {
+  .terminal-shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
   .workspace { grid-template-columns: 1fr; }
   .chat-panel { min-height: 42rem; }
   .sidebar { min-height: 28rem; }

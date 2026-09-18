@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { clearAccessToken, getAccessToken, signIn } from '../auth/auth';
 import type { AgentTask, ApprovalRequest } from '../contracts';
 import { useChatSession } from '../hooks/useChatSession';
@@ -240,6 +240,7 @@ export default function Home() {
   const messagesFeedRef = useRef<HTMLDivElement>(null);
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -266,10 +267,27 @@ export default function Home() {
     }
   }, [initConversation]);
 
+  const scheduleStickyScroll = useCallback(() => {
+    if (scrollFrameRef.current !== null) return;
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const feed = messagesFeedRef.current;
+      if (!feed || !shouldAutoScroll(stickyBottomRef.current)) return;
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+  }, []);
+
   const scrollToLatest = () => {
     const feed = messagesFeedRef.current;
     if (!feed) return;
 
+    if (scrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
     stickyBottomRef.current = true;
     setIsStickyBottom(true);
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -277,12 +295,14 @@ export default function Home() {
   };
 
   useEffect(() => {
-    const feed = messagesFeedRef.current;
-    if (!feed || !shouldAutoScroll(stickyBottomRef.current)) return;
+    scheduleStickyScroll();
+  }, [messages, tasks, approvals, events, chatError, scheduleStickyScroll]);
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
-  }, [messages, tasks, approvals, events, chatError]);
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const feed = messagesFeedRef.current;
@@ -290,13 +310,11 @@ export default function Home() {
     if (!feed || !content || typeof ResizeObserver === 'undefined') return;
 
     const observer = new ResizeObserver(() => {
-      if (!shouldAutoScroll(stickyBottomRef.current)) return;
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+      scheduleStickyScroll();
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, scheduleStickyScroll]);
 
   const handleFeedScroll = () => {
     const feed = messagesFeedRef.current;
