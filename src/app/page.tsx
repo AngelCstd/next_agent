@@ -1,10 +1,88 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { clearAccessToken, getAccessToken, signIn } from '../auth/auth';
 import type { AgentTask, ApprovalRequest } from '../contracts';
 import { useChatSession } from '../hooks/useChatSession';
 import { deriveAgentActivity, type AgentActivityStep } from '../view-models/agentActivity';
+
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_)/g);
+
+  return tokens.map((token, index) => {
+    const key = `${keyPrefix}-${index}`;
+
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return <code key={key}>{token.slice(1, -1)}</code>;
+    }
+
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={key}>{token.slice(2, -2)}</strong>;
+    }
+
+    if (
+      (token.startsWith('*') && token.endsWith('*')) ||
+      (token.startsWith('_') && token.endsWith('_'))
+    ) {
+      return <em key={key}>{token.slice(1, -1)}</em>;
+    }
+
+    return token;
+  });
+}
+
+function renderMarkdown(text: string): ReactNode[] {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    if (lines[index].trim() === '') {
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(lines[index])) {
+      const items: string[] = [];
+
+      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^[-*]\s+/, ''));
+        index += 1;
+      }
+
+      const blockKey = `list-${blocks.length}`;
+      blocks.push(
+        <ul key={blockKey}>
+          {items.map((item, itemIndex) => (
+            <li key={`${blockKey}-${itemIndex}`}>
+              {renderInlineMarkdown(item, `${blockKey}-${itemIndex}`)}
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() !== '' &&
+      !/^[-*]\s+/.test(lines[index])
+    ) {
+      paragraphLines.push(lines[index]);
+      index += 1;
+    }
+
+    const blockKey = `paragraph-${blocks.length}`;
+    blocks.push(
+      <p key={blockKey}>
+        {renderInlineMarkdown(paragraphLines.join('\n'), blockKey)}
+      </p>,
+    );
+  }
+
+  return blocks;
+}
 
 function StepMark({ status }: { status: AgentActivityStep['status'] }) {
   const marks: Record<AgentActivityStep['status'], string> = {
@@ -137,7 +215,9 @@ export default function Home() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'agents' | 'tasks' | 'activity'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'tasks'>('agents');
+  const messagesFeedRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   const {
     messages,
@@ -161,6 +241,13 @@ export default function Home() {
       void initConversation();
     }
   }, [initConversation]);
+
+  useEffect(() => {
+    const feed = messagesFeedRef.current;
+    if (feed) {
+      feed.scrollTop = feed.scrollHeight;
+    }
+  }, [messages.length, approvals.length, activitySteps.length]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -193,7 +280,12 @@ export default function Home() {
     if (!inputMessage.trim() || isSending) return;
     const msg = inputMessage;
     setInputMessage('');
-    await sendMessage(msg);
+    messageInputRef.current?.focus();
+    try {
+      await sendMessage(msg);
+    } finally {
+      messageInputRef.current?.focus();
+    }
   };
 
   const handleQuickPrompt = (prompt: string) => {
@@ -318,7 +410,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="messages-feed" aria-live="polite">
+          <div ref={messagesFeedRef} className="messages-feed" aria-live="polite">
             {isInitializing && (
               <div className="loading-state">
                 Conectando con el agente y abriendo conversación...
@@ -354,7 +446,7 @@ export default function Home() {
                     <span className="message-author">
                       {msg.role === 'user' ? 'Tú:' : 'Noktos:'}
                     </span>
-                    <div className="message-content">{msg.content}</div>
+                    <div className="message-content">{renderMarkdown(msg.content)}</div>
                   </div>
                 </div>
               );
@@ -378,12 +470,13 @@ export default function Home() {
 
           <form onSubmit={handleSendMessage} className="chat-form">
             <input
+              ref={messageInputRef}
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               placeholder="Escribe tu consulta o instrucción..."
               aria-label="Mensaje"
-              disabled={isSending || isInitializing}
+              disabled={isInitializing}
               className="terminal-input"
             />
             <button
@@ -417,15 +510,6 @@ export default function Home() {
               className={`tab ${activeTab === 'tasks' ? 'active' : ''}`}
             >
               Tareas ({tasks.length})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'activity'}
-              onClick={() => setActiveTab('activity')}
-              className={`tab ${activeTab === 'activity' ? 'active' : ''}`}
-            >
-              SSE ({events.length})
             </button>
           </div>
 
@@ -497,25 +581,6 @@ export default function Home() {
             </div>
           )}
 
-          {activeTab === 'activity' && (
-            <div className="sidebar-content" role="tabpanel">
-              {events.length === 0 ? (
-                <div className="empty-state">Esperando eventos por el stream SSE...</div>
-              ) : (
-                <div className="event-list">
-                  {events.map((evt) => (
-                    <div key={evt.id || `${evt.seq}-${evt.type}`} className="event-card">
-                      <div className="event-meta">
-                        <span>seq: {evt.seq}</span>
-                        <span>{new Date(evt.occurredAt).toLocaleTimeString()}</span>
-                      </div>
-                      <div className="event-type">{evt.type}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </aside>
       </div>
     </main>

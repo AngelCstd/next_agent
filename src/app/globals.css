@@ -182,6 +182,9 @@ button:disabled { cursor: not-allowed; }
   line-height: 1.65;
   white-space: pre-wrap;
 }
+.message-content p, .message-content ul { margin: 0; }
+.message-content > * + * { margin-top: 0.75rem; }
+.message-content ul { padding-left: 1.25rem; }
 
 .empty-state, .loading-state {
   width: min(100%, 32rem);
