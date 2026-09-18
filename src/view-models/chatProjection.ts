@@ -12,13 +12,16 @@ export function isAnswerTextData(data: unknown): data is { text: string } {
 
 export function projectTaskAssistantContent(task: AgentTask): string | null {
   if (task.status === 'completed' && task.result) {
-    if (task.result.kind === 'answer' && isAnswerTextData(task.result.data)) {
+    if (isAnswerTextData(task.result.data)) {
       return task.result.data.text;
     }
     return task.result.summary;
   }
 
   if (task.status === 'failed' && task.failure) {
+    if (task.failure.code === 'APPROVAL_REJECTED') {
+      return 'No realicé la acción.';
+    }
     return task.failure.message;
   }
 

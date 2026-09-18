@@ -9,7 +9,10 @@ import type {
   Conversation,
 } from '../contracts';
 import { HttpTransport } from '../infrastructure/api/HttpTransport';
-import { projectTaskAssistantContent } from '../view-models/chatProjection';
+import {
+  mergeTaskAssistantMessages,
+  type ChatMessage,
+} from '../view-models/chatMessages';
 import {
   createStartGuard,
   createStateRefreshScheduler,
@@ -17,15 +20,7 @@ import {
   type StateRefreshScheduler,
 } from './stateRefresh';
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  createdAt: string;
-  taskId?: string;
-  approvalId?: string;
-  status?: 'pending' | 'completed' | 'failed';
-}
+export type { ChatMessage } from '../view-models/chatMessages';
 
 export function useChatSession() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -60,30 +55,7 @@ export function useChatSession() {
       const fetchedTasks = await transport.listTasks(convId);
       setTasks(fetchedTasks);
 
-      setMessages((prev) => {
-        const updated = [...prev];
-        for (const task of fetchedTasks) {
-          const text = projectTaskAssistantContent(task);
-          if (!text) continue;
-
-          const existingIdx = updated.findIndex((m) => m.taskId === task.id);
-          const taskMsg: ChatMessage = {
-            id: `assistant-msg-${task.id}`,
-            role: 'assistant',
-            content: text,
-            createdAt: task.finishedAt || task.createdAt,
-            taskId: task.id,
-            status: task.status === 'completed' ? 'completed' : 'failed',
-          };
-
-          if (existingIdx >= 0) {
-            updated[existingIdx] = taskMsg;
-          } else {
-            updated.push(taskMsg);
-          }
-        }
-        return updated;
-      });
+      setMessages((prev) => mergeTaskAssistantMessages(prev, fetchedTasks));
     } catch {
       // Ignored non-fatal transient refresh error
     }

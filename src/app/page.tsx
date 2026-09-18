@@ -10,6 +10,11 @@ import {
   scopeTasksToTurn,
   type AgentActivityStep,
 } from '../view-models/agentActivity';
+import { deriveInlineActivityPresentation } from '../view-models/inlineActivity';
+import {
+  isNearScrollBottom,
+  shouldAutoScroll,
+} from '../view-models/scrollBehavior';
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_)/g);
@@ -117,26 +122,36 @@ function ActivitySteps({ steps }: { steps: AgentActivityStep[] }) {
   );
 }
 
-function ActivityCard({
-  steps,
-  isSending,
-}: {
-  steps: AgentActivityStep[];
-  isSending: boolean;
-}) {
+function InlineActivity({ steps }: { steps: AgentActivityStep[] }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (steps.length === 0) return null;
 
-  const isRunning = isSending || steps.some((step) => step.status === 'running');
+  const presentation = deriveInlineActivityPresentation(steps, expanded);
+
+  if (presentation.mode === 'running') {
+    return (
+      <div className="inline-activity running" aria-label={presentation.summary}>
+        <ActivitySteps steps={presentation.visibleSteps} />
+      </div>
+    );
+  }
 
   return (
-    <div className="activity-card">
-      <div className="activity-header">
-        <span className="activity-title">Actividad de Agentes</span>
-        <span className="activity-state">
-          {isRunning ? 'En progreso...' : 'Completado'}
+    <div className="inline-activity completed">
+      <button
+        type="button"
+        className="activity-summary-button"
+        aria-expanded={presentation.expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span aria-hidden="true">✓</span>
+        <span>{presentation.summary}</span>
+        <span className="activity-detail-affordance">
+          {presentation.expanded ? 'Ocultar detalle ▴' : 'Ver detalle ▾'}
         </span>
-      </div>
-      <ActivitySteps steps={steps} />
+      </button>
+      {presentation.expanded && <ActivitySteps steps={presentation.visibleSteps} />}
     </div>
   );
 }
@@ -199,7 +214,7 @@ function ApprovalCard({
 
         {approval.status === 'approved' && (
           <div className="approval-result">
-            ✓ Aprobado. Acción ejecutada en el adaptador de carrito.
+            ✓ Aprobación registrada. Procesando la acción...
           </div>
         )}
 
@@ -221,7 +236,10 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'agents' | 'tasks'>('agents');
+  const [isStickyBottom, setIsStickyBottom] = useState(true);
   const messagesFeedRef = useRef<HTMLDivElement>(null);
+  const messagesContentRef = useRef<HTMLDivElement>(null);
+  const stickyBottomRef = useRef(true);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -248,12 +266,46 @@ export default function Home() {
     }
   }, [initConversation]);
 
+  const scrollToLatest = () => {
+    const feed = messagesFeedRef.current;
+    if (!feed) return;
+
+    stickyBottomRef.current = true;
+    setIsStickyBottom(true);
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+  };
+
   useEffect(() => {
     const feed = messagesFeedRef.current;
-    if (feed) {
-      feed.scrollTop = feed.scrollHeight;
-    }
-  }, [messages.length, approvals.length, latestTurnActivitySteps.length]);
+    if (!feed || !shouldAutoScroll(stickyBottomRef.current)) return;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+  }, [messages, tasks, approvals, events, chatError]);
+
+  useEffect(() => {
+    const feed = messagesFeedRef.current;
+    const content = messagesContentRef.current;
+    if (!feed || !content || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoScroll(stickyBottomRef.current)) return;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [isAuthenticated]);
+
+  const handleFeedScroll = () => {
+    const feed = messagesFeedRef.current;
+    if (!feed) return;
+
+    const nextSticky = isNearScrollBottom(feed);
+    stickyBottomRef.current = nextSticky;
+    setIsStickyBottom((current) => current === nextSticky ? current : nextSticky);
+  };
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -292,11 +344,6 @@ export default function Home() {
     } finally {
       messageInputRef.current?.focus();
     }
-  };
-
-  const handleQuickPrompt = (prompt: string) => {
-    if (isSending) return;
-    void sendMessage(prompt);
   };
 
   const getApprovalForTask = (taskId?: string): ApprovalRequest | undefined => {
@@ -386,35 +433,14 @@ export default function Home() {
         <section className="terminal-panel chat-panel" aria-labelledby="chat-heading">
           <h1 id="chat-heading" className="panel-label">Chat</h1>
 
-          <div className="quick-prompts">
-            <span className="quick-prompts-label">Escenarios de demo:</span>
-            <button
-              type="button"
-              onClick={() => handleQuickPrompt('demo:greeting')}
-              disabled={isSending || isInitializing}
-              className="terminal-button quick-button"
-            >
-              demo:greeting
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickPrompt('demo:hotel-delegation')}
-              disabled={isSending || isInitializing}
-              className="terminal-button quick-button"
-            >
-              demo:hotel-delegation
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickPrompt('demo:add-reservation-to-cart')}
-              disabled={isSending || isInitializing}
-              className="terminal-button quick-button approval-trigger"
-            >
-              demo:add-reservation-to-cart
-            </button>
-          </div>
-
-          <div ref={messagesFeedRef} className="messages-feed" aria-live="polite">
+          <div className="messages-feed-shell">
+          <div
+            ref={messagesFeedRef}
+            className="messages-feed"
+            aria-live="polite"
+            onScroll={handleFeedScroll}
+          >
+            <div ref={messagesContentRef} className="messages-content">
             {isInitializing && (
               <div className="loading-state">
                 Conectando con el agente y abriendo conversación...
@@ -423,24 +449,19 @@ export default function Home() {
 
             {messages.length === 0 && !isInitializing && (
               <div className="empty-state">
-                Escribe un mensaje o presiona uno de los escenarios de demo superiores para iniciar la interacción.
+                Escribe un mensaje para iniciar la interacción.
               </div>
             )}
 
-            {messages.map((msg, idx) => {
+            {messages.map((msg) => {
               const approval = getApprovalForTask(msg.taskId);
               const turnActivitySteps = msg.role === 'assistant'
                 ? deriveAgentActivity(scopeTasksToTurn(tasks, msg.taskId), events)
                 : [];
-              const isLatestMessage = idx === messages.length - 1;
-
               return (
                 <div key={msg.id} className="message-group">
                   {turnActivitySteps.length > 0 && (
-                    <ActivityCard
-                      steps={turnActivitySteps}
-                      isSending={isSending && isLatestMessage}
-                    />
+                    <InlineActivity steps={turnActivitySteps} />
                   )}
 
                   {approval && (
@@ -464,7 +485,7 @@ export default function Home() {
             {chatError && <div className="error-box">{chatError}</div>}
 
             {!isLatestMessageAssistant && latestTurnActivitySteps.length > 0 && (
-              <ActivityCard steps={latestTurnActivitySteps} isSending={isSending} />
+              <InlineActivity steps={latestTurnActivitySteps} />
             )}
 
             {unattachedApprovals.map((approval) => (
@@ -475,6 +496,13 @@ export default function Home() {
                 decideApproval={decideApproval}
               />
             ))}
+            </div>
+          </div>
+          {!isStickyBottom && (
+            <button type="button" className="jump-to-latest" onClick={scrollToLatest}>
+              ↓ Ir al último mensaje
+            </button>
+          )}
           </div>
 
           <form onSubmit={handleSendMessage} className="chat-form">

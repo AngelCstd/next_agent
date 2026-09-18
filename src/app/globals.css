@@ -117,16 +117,6 @@ button:disabled { cursor: not-allowed; }
   text-transform: uppercase;
 }
 
-.quick-prompts {
-  padding: 0.65rem 0.8rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  border-bottom: 1px solid var(--line-soft);
-}
-.quick-prompts-label { margin-right: 0.25rem; color: var(--muted); font-size: 0.75rem; }
-
 .terminal-button {
   min-height: 2.35rem;
   border: 1px solid var(--line);
@@ -143,10 +133,6 @@ button:disabled { cursor: not-allowed; }
   outline: none;
 }
 .terminal-button:disabled { border-color: var(--disabled); color: #8a9290; }
-.quick-button { min-height: auto; padding: 0.3rem 0.5rem; font-size: 0.75rem; }
-.quick-button.approval-trigger { border-color: var(--approval); color: var(--approval); }
-.quick-button.approval-trigger:hover:not(:disabled), .quick-button.approval-trigger:focus-visible { background: var(--approval); }
-
 .messages-feed {
   min-height: 18rem;
   padding: clamp(1rem, 3vw, 2rem);
@@ -156,6 +142,36 @@ button:disabled { cursor: not-allowed; }
   gap: 1.25rem;
   overflow-y: auto;
   scrollbar-color: var(--line-soft) transparent;
+}
+.messages-feed-shell {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+}
+.messages-content {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.jump-to-latest {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1;
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.7rem;
+  background: var(--surface);
+  color: var(--line);
+  box-shadow: 0 2px 8px rgb(28 36 35 / 14%);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.jump-to-latest:hover, .jump-to-latest:focus-visible {
+  background: var(--line);
+  color: var(--surface);
+  outline: none;
 }
 .message-group { display: flex; flex-direction: column; gap: 0.75rem; }
 .message-row {
@@ -276,18 +292,6 @@ button:disabled { cursor: not-allowed; }
 .agent-role, .task-status { color: var(--line); font-size: 0.7rem; text-align: right; }
 .progress-list { display: flex; flex-direction: column; gap: 0.75rem; }
 
-.activity-card { width: min(100%, 42rem); border: 1px solid var(--line); background: var(--surface); }
-.activity-header {
-  padding: 0.55rem 0.7rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--accent-soft);
-}
-.activity-title { color: var(--line); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.activity-state { color: var(--muted); font-size: 0.7rem; }
 .activity-steps { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .activity-step {
   display: grid;
@@ -303,6 +307,30 @@ button:disabled { cursor: not-allowed; }
 .step-mark.failed { color: var(--ink); }
 .step-agent { color: var(--ink); font-weight: 700; }
 .step-divider { color: var(--line-soft); margin: 0 0.35rem; }
+.inline-activity {
+  width: min(100%, 42rem);
+  border-left: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+.inline-activity .activity-steps { padding: 0.2rem 0 0.2rem 0.65rem; gap: 0.3rem; }
+.inline-activity.completed { border-left-color: transparent; }
+.activity-summary-button {
+  width: 100%;
+  border: 0;
+  padding: 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: transparent;
+  color: var(--line);
+  font-size: 0.72rem;
+  text-align: left;
+}
+.activity-summary-button:hover, .activity-summary-button:focus-visible {
+  color: var(--ink);
+  outline: none;
+}
+.activity-detail-affordance { margin-left: auto; color: var(--muted); }
 
 .approval-card { width: min(100%, 42rem); border: 1px solid var(--approval); background: #fffcf7; }
 .approval-header {
@@ -388,7 +416,7 @@ button:disabled { cursor: not-allowed; }
   .message-row { grid-template-columns: 1fr; gap: 0.25rem; }
   .message-author { text-align: left; }
   .chat-form { grid-template-columns: 1fr; }
-  .approval-header, .activity-header { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+  .approval-header { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
   .preview-row { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
   .preview-value { text-align: left; }
 }
