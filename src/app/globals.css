@@ -338,6 +338,7 @@ button:disabled { cursor: not-allowed; }
 .activity-detail-affordance { margin-left: auto; color: var(--muted); }
 
 .approval-card { width: min(100%, 42rem); border: 1px solid var(--approval); background: #fffcf7; }
+.approval-card.terminal { border-color: var(--line-soft); background: var(--surface); }
 .approval-header {
   padding: 0.6rem 0.75rem;
   display: flex;
@@ -348,16 +349,10 @@ button:disabled { cursor: not-allowed; }
   background: var(--approval-soft);
 }
 .approval-title { color: var(--approval); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-.approval-status {
-  border: 1px solid var(--approval);
-  padding: 0.15rem 0.4rem;
-  color: var(--approval);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-}
-.approval-body { padding: 0.85rem; display: flex; flex-direction: column; gap: 0.85rem; }
-.approval-summary { margin: 0; font-size: 0.85rem; line-height: 1.55; }
+.approval-body { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.65rem; }
 .approval-preview { border-top: 1px dotted #d9b98f; border-bottom: 1px dotted #d9b98f; padding: 0.6rem 0; }
+.approval-summary-button { padding: 0.55rem 0.7rem; }
+.approval-card.terminal .approval-preview { margin: 0 0.7rem 0.65rem; }
 .preview-row { padding: 0.25rem 0; font-size: 0.8rem; }
 .preview-label { color: var(--muted); }
 .preview-value { color: var(--ink); font-weight: 650; text-align: right; }
@@ -375,7 +370,6 @@ button:disabled { cursor: not-allowed; }
 .approval-button:hover:not(:disabled), .approval-button:focus-visible { background: var(--approval); color: var(--surface); outline: none; }
 .approval-button.reject { border-style: dashed; }
 .approval-button:disabled { opacity: 0.55; }
-.approval-result { color: var(--approval); font-size: 0.8rem; line-height: 1.5; }
 
 .task-list, .event-list { display: flex; flex-direction: column; gap: 0.65rem; }
 .task-card { padding: 0.75rem; font-size: 0.78rem; }

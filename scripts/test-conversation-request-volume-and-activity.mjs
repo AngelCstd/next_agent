@@ -9,11 +9,13 @@ import {
   getStateRefreshKind,
 } from '../src/hooks/stateRefresh.ts';
 import { deriveInlineActivityPresentation } from '../src/view-models/inlineActivity.ts';
+import { deriveApprovalPresentation } from '../src/view-models/approvalPresentation.ts';
 import { mergeTaskAssistantMessages } from '../src/view-models/chatMessages.ts';
 import { projectTaskAssistantContent } from '../src/view-models/chatProjection.ts';
 import {
   isNearScrollBottom,
   shouldAutoScroll,
+  shouldUpdateStickyBottom,
 } from '../src/view-models/scrollBehavior.ts';
 
 console.log('[test-conversation-request-volume-and-activity] Starting suite...');
@@ -133,6 +135,65 @@ const third = supervisorTask('supervisor-third', 'failed', '2026-09-18T10:02:00.
   assert.equal(isNearScrollBottom({ scrollTop: 700, scrollHeight: 1000, clientHeight: 100 }), false);
   assert.equal(shouldAutoScroll(false), false);
   assert.equal(shouldAutoScroll(true), true);
+
+  const smoothScrollTimeline = [true, true, true, false];
+  assert.deepEqual(
+    smoothScrollTimeline.map(shouldUpdateStickyBottom),
+    [false, false, false, true],
+  );
+  assert.equal(shouldUpdateStickyBottom(false), true);
+}
+
+// Approval cards show only a compact allowlisted preview and collapse in terminal states.
+{
+  const internalUuid = '123e4567-e89b-12d3-a456-426614174000';
+  const approvalFixture = {
+    id: internalUuid,
+    approvalId: internalUuid,
+    taskId: internalUuid,
+    payloadHash: `hash-${internalUuid}`,
+    authContextId: internalUuid,
+    raw: { secret: true },
+    inputPreview: [
+      { label: 'Hotel', value: 'Casa Arena' },
+      { label: 'Fechas', value: '20–23 sep' },
+      { label: 'Huéspedes', value: '2 adultos' },
+      { label: 'Precio', value: '$4,800 MXN', emphasis: 'warning' },
+      { label: 'Extra', value: 'No debe mostrarse en la vista compacta' },
+    ],
+  };
+
+  const pending = deriveApprovalPresentation('pending', approvalFixture.inputPreview, false);
+  assert.equal(pending.mode, 'pending');
+  assert.equal(pending.expanded, true);
+  assert.equal(pending.visibleFields.length, 4);
+
+  for (const status of ['approved', 'rejected', 'expired', 'superseded']) {
+    const collapsed = deriveApprovalPresentation(status, approvalFixture.inputPreview, false);
+    assert.equal(collapsed.mode, 'terminal');
+    assert.equal(collapsed.expanded, false);
+    assert.deepEqual(collapsed.visibleFields, []);
+    assert.ok(collapsed.summary.length < 64);
+
+    const expanded = deriveApprovalPresentation(status, approvalFixture.inputPreview, true);
+    assert.equal(expanded.expanded, true);
+    assert.equal(expanded.visibleFields.length, 4);
+
+    const renderedText = [
+      expanded.summary,
+      ...expanded.visibleFields.flatMap((field) => [field.label, field.value]),
+    ].join(' ');
+    assert.doesNotMatch(renderedText, /[0-9a-f]{8}-[0-9a-f-]{27,}/i);
+    assert.doesNotMatch(
+      renderedText,
+      /approvalId|taskId|payloadHash|authContextId|[{[]|"secret"/i,
+    );
+  }
+
+  const firstApproval = deriveApprovalPresentation('approved', approvalFixture.inputPreview, true);
+  const secondApproval = deriveApprovalPresentation('approved', approvalFixture.inputPreview, false);
+  assert.equal(firstApproval.expanded, true);
+  assert.equal(secondApproval.expanded, false);
 }
 
 // Every backend completion shape projects its natural text instead of its audit summary.

@@ -1,6 +1,14 @@
 'use client';
 
-import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { clearAccessToken, getAccessToken, signIn } from '../auth/auth';
 import type { AgentTask, ApprovalRequest } from '../contracts';
 import { useChatSession } from '../hooks/useChatSession';
@@ -11,9 +19,11 @@ import {
   type AgentActivityStep,
 } from '../view-models/agentActivity';
 import { deriveInlineActivityPresentation } from '../view-models/inlineActivity';
+import { deriveApprovalPresentation } from '../view-models/approvalPresentation';
 import {
   isNearScrollBottom,
   shouldAutoScroll,
+  shouldUpdateStickyBottom,
 } from '../view-models/scrollBehavior';
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
@@ -165,64 +175,78 @@ function ApprovalCard({
   submittingApprovalId: string | null;
   decideApproval: (id: string, decision: 'approve' | 'reject') => Promise<void>;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const presentation = deriveApprovalPresentation(
+    approval.status,
+    approval.inputPreview,
+    expanded,
+  );
+
+  const preview = (
+    <div className="approval-preview">
+      {presentation.visibleFields.map((field, idx) => (
+        <div key={idx} className="preview-row">
+          <span className="preview-label">{field.label}:</span>
+          <span
+            className={`preview-value ${field.emphasis === 'warning' ? 'warning' : ''}`}
+          >
+            {field.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (presentation.mode === 'terminal') {
+    return (
+      <div className="approval-card terminal">
+        <button
+          type="button"
+          className="activity-summary-button approval-summary-button"
+          aria-expanded={presentation.expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <span aria-hidden="true">
+            {approval.status === 'approved' ? '✓' : approval.status === 'rejected' ? '✕' : '·'}
+          </span>
+          <span>{presentation.summary}</span>
+          <span className="activity-detail-affordance">
+            {presentation.expanded ? 'Ocultar detalle ▴' : 'Ver detalle ▾'}
+          </span>
+        </button>
+        {presentation.expanded && preview}
+      </div>
+    );
+  }
+
   return (
-    <div className="approval-card">
+    <div className="approval-card pending">
       <div className="approval-header">
-        <span className="approval-title">! Aprobación Humana Requerida</span>
-        <span className="approval-status">{approval.status}</span>
+        <span className="approval-title">! {presentation.summary}</span>
       </div>
 
       <div className="approval-body">
-        <p className="approval-summary">{approval.summary}</p>
-
         {/* Only declared-safe, allowlisted preview fields are rendered here. */}
-        <div className="approval-preview">
-          {approval.inputPreview.map((field, idx) => (
-            <div key={idx} className="preview-row">
-              <span className="preview-label">{field.label}:</span>
-              <span
-                className={`preview-value ${
-                  field.emphasis === 'warning' ? 'warning' : ''
-                }`}
-              >
-                {field.value}
-              </span>
-            </div>
-          ))}
+        {preview}
+
+        <div className="approval-actions">
+          <button
+            type="button"
+            onClick={() => decideApproval(approval.id, 'reject')}
+            disabled={submittingApprovalId === approval.id}
+            className="approval-button reject"
+          >
+            {submittingApprovalId === approval.id ? 'Rechazando...' : 'Rechazar'}
+          </button>
+          <button
+            type="button"
+            onClick={() => decideApproval(approval.id, 'approve')}
+            disabled={submittingApprovalId === approval.id}
+            className="approval-button"
+          >
+            {submittingApprovalId === approval.id ? 'Aprobando...' : 'Aprobar'}
+          </button>
         </div>
-
-        {approval.status === 'pending' && (
-          <div className="approval-actions">
-            <button
-              type="button"
-              onClick={() => decideApproval(approval.id, 'reject')}
-              disabled={submittingApprovalId === approval.id}
-              className="approval-button reject"
-            >
-              {submittingApprovalId === approval.id ? 'Rechazando...' : 'Rechazar'}
-            </button>
-            <button
-              type="button"
-              onClick={() => decideApproval(approval.id, 'approve')}
-              disabled={submittingApprovalId === approval.id}
-              className="approval-button"
-            >
-              {submittingApprovalId === approval.id ? 'Aprobando...' : 'Aprobar'}
-            </button>
-          </div>
-        )}
-
-        {approval.status === 'approved' && (
-          <div className="approval-result">
-            ✓ Aprobación registrada. Procesando la acción...
-          </div>
-        )}
-
-        {approval.status === 'rejected' && (
-          <div className="approval-result">
-            × Rechazado. Ninguna acción fue ejecutada en el adaptador.
-          </div>
-        )}
       </div>
     </div>
   );
@@ -241,6 +265,8 @@ export default function Home() {
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
   const scrollFrameRef = useRef<number | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollEndTimerRef = useRef<number | null>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -267,6 +293,35 @@ export default function Home() {
     }
   }, [initConversation]);
 
+  const finishProgrammaticScroll = useCallback(() => {
+    if (programmaticScrollEndTimerRef.current !== null) {
+      window.clearTimeout(programmaticScrollEndTimerRef.current);
+      programmaticScrollEndTimerRef.current = null;
+    }
+
+    isProgrammaticScrollRef.current = false;
+    const feed = messagesFeedRef.current;
+    if (!feed) return;
+
+    const nextSticky = isNearScrollBottom(feed);
+    stickyBottomRef.current = nextSticky;
+    setIsStickyBottom((current) => current === nextSticky ? current : nextSticky);
+  }, []);
+
+  const armProgrammaticScrollFallback = useCallback(() => {
+    if (programmaticScrollEndTimerRef.current !== null) {
+      window.clearTimeout(programmaticScrollEndTimerRef.current);
+    }
+    programmaticScrollEndTimerRef.current = window.setTimeout(finishProgrammaticScroll, 180);
+  }, [finishProgrammaticScroll]);
+
+  const scrollFeedToBottom = useCallback((feed: HTMLDivElement) => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    isProgrammaticScrollRef.current = true;
+    armProgrammaticScrollFallback();
+    feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+  }, [armProgrammaticScrollFallback]);
+
   const scheduleStickyScroll = useCallback(() => {
     if (scrollFrameRef.current !== null) return;
 
@@ -275,10 +330,9 @@ export default function Home() {
       const feed = messagesFeedRef.current;
       if (!feed || !shouldAutoScroll(stickyBottomRef.current)) return;
 
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+      scrollFeedToBottom(feed);
     });
-  }, []);
+  }, [scrollFeedToBottom]);
 
   const scrollToLatest = () => {
     const feed = messagesFeedRef.current;
@@ -290,8 +344,7 @@ export default function Home() {
     }
     stickyBottomRef.current = true;
     setIsStickyBottom(true);
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    feed.scrollTo({ top: feed.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+    scrollFeedToBottom(feed);
   };
 
   useEffect(() => {
@@ -302,6 +355,9 @@ export default function Home() {
     if (scrollFrameRef.current !== null) {
       window.cancelAnimationFrame(scrollFrameRef.current);
     }
+    if (programmaticScrollEndTimerRef.current !== null) {
+      window.clearTimeout(programmaticScrollEndTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -309,20 +365,42 @@ export default function Home() {
     const content = messagesContentRef.current;
     if (!feed || !content || typeof ResizeObserver === 'undefined') return;
 
-    const observer = new ResizeObserver(() => {
-      scheduleStickyScroll();
-    });
+    const observer = new ResizeObserver(scheduleStickyScroll);
     observer.observe(content);
     return () => observer.disconnect();
   }, [isAuthenticated, scheduleStickyScroll]);
+
+  useEffect(() => {
+    const feed = messagesFeedRef.current;
+    if (!feed) return;
+
+    const handleScrollEnd = () => {
+      if (isProgrammaticScrollRef.current) finishProgrammaticScroll();
+    };
+    feed.addEventListener('scrollend', handleScrollEnd);
+    return () => feed.removeEventListener('scrollend', handleScrollEnd);
+  }, [isAuthenticated, finishProgrammaticScroll]);
 
   const handleFeedScroll = () => {
     const feed = messagesFeedRef.current;
     if (!feed) return;
 
+    if (!shouldUpdateStickyBottom(isProgrammaticScrollRef.current)) {
+      armProgrammaticScrollFallback();
+      return;
+    }
+
     const nextSticky = isNearScrollBottom(feed);
     stickyBottomRef.current = nextSticky;
     setIsStickyBottom((current) => current === nextSticky ? current : nextSticky);
+  };
+
+  const handleUserScrollIntent = () => {
+    if (isProgrammaticScrollRef.current) finishProgrammaticScroll();
+  };
+
+  const handleFeedPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) handleUserScrollIntent();
   };
 
   const handleLogin = async (e: FormEvent) => {
@@ -457,6 +535,9 @@ export default function Home() {
             className="messages-feed"
             aria-live="polite"
             onScroll={handleFeedScroll}
+            onWheel={handleUserScrollIntent}
+            onTouchMove={handleUserScrollIntent}
+            onPointerDown={handleFeedPointerDown}
           >
             <div ref={messagesContentRef} className="messages-content">
             {isInitializing && (

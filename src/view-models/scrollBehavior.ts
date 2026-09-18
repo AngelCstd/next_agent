@@ -16,3 +16,7 @@ export function isNearScrollBottom(
 export function shouldAutoScroll(isStickyBottom: boolean): boolean {
   return isStickyBottom;
 }
+
+export function shouldUpdateStickyBottom(isProgrammaticScroll: boolean): boolean {
+  return !isProgrammaticScroll;
+}
